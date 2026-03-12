@@ -48,9 +48,8 @@ jobs:
   deploy:
     name: Deploy on Runner
     needs: build-test
-    if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feature/'))
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+      
     runs-on: [self-hosted, linux]
 
     steps:
