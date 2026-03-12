@@ -46,7 +46,7 @@ jobs:
     name: Deploy on Runner
     needs: build-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Download build artifact
