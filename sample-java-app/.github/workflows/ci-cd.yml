@@ -1,0 +1,74 @@
+name: Java CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn -B clean package
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-app-artifact
+          path: target/*.jar
+          retention-days: 7
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            target/surefire-reports/
+            target/site/
+          retention-days: 7
+
+  deploy:
+    name: Deploy on Runner
+    needs: build-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: java-app-artifact
+          path: deploy
+
+      - name: Show downloaded files
+        run: ls -lah deploy
+
+      - name: Stop old app if running
+        run: |
+          pkill -f 'java -jar' || true
+
+      - name: Deploy app on runner
+        run: |
+          mkdir -p /tmp/sample-java-app
+          cp deploy/*.jar /tmp/sample-java-app/app.jar
+          nohup java -jar /tmp/sample-java-app/app.jar > /tmp/sample-java-app/app.log 2>&1 &
+          echo "Application deployed successfully"
+
+      - name: Check running process
+        run: |
+          ps -ef | grep 'app.jar' | grep -v grep
