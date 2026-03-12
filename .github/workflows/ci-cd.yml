@@ -46,29 +46,36 @@ jobs:
     name: Deploy on Runner
     needs: build-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
 
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: java-app-artifact
-          path: deploy
+    - name: Download build artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: java-app-artifact
+        path: deploy
 
-      - name: Show downloaded files
-        run: ls -lah deploy
+    - name: Show downloaded files
+      run: ls -lah deploy
 
-      - name: Stop old app if running
-        run: |
-          pkill -f 'java -jar' || true
+    - name: Stop old app if running
+      run: |
+        pkill -f 'app.jar' || true
 
-      - name: Deploy app on runner
-        run: |
-          mkdir -p /tmp/sample-java-app
-          cp deploy/*.jar /tmp/sample-java-app/app.jar
-          nohup java -jar /tmp/sample-java-app/app.jar > /tmp/sample-java-app/app.log 2>&1 &
-          echo "Application deployed successfully"
+    - name: Deploy app on runner
+      run: |
+        mkdir -p /tmp/sample-java-app
+        cp deploy/*.jar /tmp/sample-java-app/app.jar
+        nohup java -jar /tmp/sample-java-app/app.jar > /tmp/sample-java-app/app.log 2>&1 &
+        echo "Application deployed successfully"
 
-      - name: Check running process
-        run: |
-          ps -ef | grep 'app.jar' | grep -v grep
+    - name: Wait for app startup
+      run: sleep 15
+
+    - name: Check running process
+      run: |
+        ps -ef | grep 'app.jar' | grep -v grep
+
+    - name: Smoke test on localhost
+      run: |
+        curl -f http://localhost:8080/
