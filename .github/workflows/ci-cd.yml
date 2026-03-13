@@ -6,7 +6,6 @@ on:
       - main
       - dev
       - 'feature/*'
-  pull_request:
 
 jobs:
   build:
@@ -23,6 +22,11 @@ jobs:
           java-version: '17'
           cache: maven
 
+      - name: Verify Java
+        run: |
+          java -version
+          echo $JAVA_HOME
+
       - name: Build
         run: mvn clean install
 
@@ -30,5 +34,3 @@ jobs:
         uses: snyk/actions/maven@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --severity-threshold=high
