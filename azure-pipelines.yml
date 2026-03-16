@@ -1,0 +1,9 @@
+trigger:
+- main
+
+pool:
+  name: Default
+
+steps:
+- script: echo "Hello from self-hosted agent"
+  displayName: Test Agent
