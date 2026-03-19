@@ -6,7 +6,7 @@ name: Build and deploy JAR app to Azure Web App - Java-test1
 on:
   push:
     branches:
-      - main
+      - feature/java-dev
   workflow_dispatch:
 
 jobs:
