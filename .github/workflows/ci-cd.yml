@@ -1,4 +1,4 @@
-name: CI Pipeline
+name: FastAPI CI Pipeline
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - main
       - dev
       - 'feature/*'
+
   pull_request:
 
 jobs:
@@ -16,26 +17,27 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          distribution: temurin
-          java-version: '17'
-          cache: maven
+          python-version: '3.11'
 
-      - name: Verify Java
+      - name: Verify Python
         run: |
-          java -version
-          echo "JAVA_HOME=$JAVA_HOME"
-          mvn -version
+          python --version
+          pip --version
 
-      - name: Build
-        run: mvn clean install
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Install Snyk CLI
-        uses: snyk/actions/setup@master
+      - name: Lint Code
+        run: |
+          pip install flake8
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 
-      - name: Snyk Test
-        run: snyk test --severity-threshold=high
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      - name: Run FastAPI App
+        run: |
+          pip install uvicorn
+          timeout 10s uvicorn main:app --host 0.0.0.0 --port 8000
