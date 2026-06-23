@@ -1,6 +1,12 @@
 pipeline {
     agent any
 
+    environment {
+        SONAR_HOST_URL = 'https://sonarcloud.io'
+        SONAR_ORG = 'siddhartha-raja'
+        SONAR_PROJECT_KEY = 'Java-Test'
+    }
+
     stages {
         stage('Checkout') {
             steps {
@@ -21,6 +27,20 @@ pipeline {
             }
         }
 
+        stage('SonarCloud Scan') {
+            steps {
+                withCredentials([string(credentialsId: 'sonarcloud-token', variable: 'SONAR_TOKEN')]) {
+                    sh """
+                    mvn sonar:sonar \
+                      -Dsonar.host.url=${SONAR_HOST_URL} \
+                      -Dsonar.organization=${SONAR_ORG} \
+                      -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                      -Dsonar.login=$SONAR_TOKEN
+                    """
+                }
+            }
+        }
+
         stage('Package') {
             steps {
                 sh 'mvn package -DskipTests'
@@ -30,10 +50,11 @@ pipeline {
 
     post {
         success {
-            echo 'Build successful'
+            echo 'Build + SonarCloud successful'
         }
         failure {
             echo 'Build failed'
         }
     }
 }
+
