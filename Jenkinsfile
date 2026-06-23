@@ -7,10 +7,8 @@ pipeline {
         SONAR_PROJECT_KEY = 'Java-Test'
 
         AWS_REGION = 'us-east-1'
-        AWS_ACCOUNT_ID = '818916267011'
         ECR_REPO = 'java-test'
         IMAGE_TAG = "${BUILD_NUMBER}"
-        ECR_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}"
     }
 
     stages {
@@ -59,6 +57,24 @@ pipeline {
             }
         }
 
+        stage('Get AWS Account ID') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
+                    script {
+                        env.AWS_ACCOUNT_ID = sh(
+                            script: "aws sts get-caller-identity --query Account --output text",
+                            returnStdout: true
+                        ).trim()
+
+                        env.ECR_URI = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/${env.ECR_REPO}"
+
+                        echo "AWS Account ID: ${env.AWS_ACCOUNT_ID}"
+                        echo "ECR URI: ${env.ECR_URI}"
+                    }
+                }
+            }
+        }
+
         stage('Login to AWS ECR') {
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
@@ -88,11 +104,31 @@ pipeline {
                 """
             }
         }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh """
+                    cp k8s/deployment.yaml k8s/deployment-generated.yaml
+
+                    sed -i 's|IMAGE_NAME|${ECR_URI}:${IMAGE_TAG}|g' k8s/deployment-generated.yaml
+
+                    kubectl apply -f k8s/deployment-generated.yaml
+                    kubectl apply -f k8s/service.yaml
+
+                    kubectl rollout status deployment/java-test
+                    kubectl get pods -o wide
+                    kubectl get svc java-test-service
+                    """
+                }
+            }
+        }
     }
 
     post {
         success {
-            echo "Pipeline successful. Docker image pushed: ${ECR_URI}:${IMAGE_TAG}"
+            echo "Pipeline successful."
+            echo "Docker image pushed: ${ECR_URI}:${IMAGE_TAG}"
         }
 
         failure {
