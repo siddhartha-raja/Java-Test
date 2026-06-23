@@ -5,6 +5,12 @@ pipeline {
         SONAR_HOST_URL = 'https://sonarcloud.io'
         SONAR_ORG = 'siddhartha-raja'
         SONAR_PROJECT_KEY = 'Java-Test'
+
+        AWS_REGION = 'us-east-1'
+        AWS_ACCOUNT_ID = '818916267011'
+        ECR_REPO = 'java-test'
+        IMAGE_TAG = "${BUILD_NUMBER}"
+        ECR_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}"
     }
 
     stages {
@@ -52,11 +58,41 @@ pipeline {
                 sh 'mvn deploy -DskipTests'
             }
         }
+
+        stage('Login to AWS ECR') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
+                    sh """
+                    aws ecr get-login-password --region ${AWS_REGION} | \
+                    docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+                    """
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                sh """
+                docker build -t ${ECR_REPO}:${IMAGE_TAG} .
+                docker tag ${ECR_REPO}:${IMAGE_TAG} ${ECR_URI}:${IMAGE_TAG}
+                docker tag ${ECR_REPO}:${IMAGE_TAG} ${ECR_URI}:latest
+                """
+            }
+        }
+
+        stage('Push Image to ECR') {
+            steps {
+                sh """
+                docker push ${ECR_URI}:${IMAGE_TAG}
+                docker push ${ECR_URI}:latest
+                """
+            }
+        }
     }
 
     post {
         success {
-            echo 'Pipeline successful: Maven build, tests, SonarCloud scan, and Nexus upload completed.'
+            echo "Pipeline successful. Docker image pushed: ${ECR_URI}:${IMAGE_TAG}"
         }
 
         failure {
