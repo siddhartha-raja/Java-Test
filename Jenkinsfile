@@ -46,15 +46,21 @@ pipeline {
                 sh 'mvn package -DskipTests'
             }
         }
+
+        stage('Upload Artifact to Nexus') {
+            steps {
+                sh 'mvn deploy -DskipTests'
+            }
+        }
     }
 
     post {
         success {
-            echo 'Build + SonarCloud successful'
+            echo 'Pipeline successful: Maven build, tests, SonarCloud scan, and Nexus upload completed.'
         }
+
         failure {
-            echo 'Build failed'
+            echo 'Pipeline failed. Check console logs.'
         }
     }
 }
-
