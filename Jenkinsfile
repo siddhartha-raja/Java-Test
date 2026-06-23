@@ -2,12 +2,38 @@ pipeline {
     agent any
 
     stages {
-        stage('Webhook Test') {
+        stage('Checkout') {
             steps {
-                echo 'Webhook triggered successfully'
-                sh 'date'
-                sh 'hostname'
+                echo 'Code checked out by Jenkins SCM'
+                sh 'ls -la'
             }
+        }
+
+        stage('Maven Build') {
+            steps {
+                sh 'mvn clean compile'
+            }
+        }
+
+        stage('Unit Test') {
+            steps {
+                sh 'mvn test'
+            }
+        }
+
+        stage('Package') {
+            steps {
+                sh 'mvn package -DskipTests'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Build successful'
+        }
+        failure {
+            echo 'Build failed'
         }
     }
 }
