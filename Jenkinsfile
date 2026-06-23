@@ -5,10 +5,6 @@ pipeline {
         SONAR_HOST_URL = 'https://sonarcloud.io'
         SONAR_ORG = 'siddhartha-raja'
         SONAR_PROJECT_KEY = 'Java-Test'
-
-        AWS_REGION = 'us-east-1'
-        ECR_REPO = 'java-test'
-        IMAGE_TAG = "${BUILD_NUMBER}"
     }
 
     stages {
@@ -16,6 +12,43 @@ pipeline {
             steps {
                 echo 'Code checked out by Jenkins SCM'
                 sh 'ls -la'
+            }
+        }
+
+        stage('Load Config') {
+            steps {
+                script {
+                    def props = readProperties file: 'ci-config.properties'
+
+                    env.APP_NAME = props['APP_NAME']
+
+                    env.GROUP_ID = props['GROUP_ID']
+                    env.ARTIFACT_ID = props['ARTIFACT_ID']
+
+                    env.NEXUS_URL = props['NEXUS_URL']
+                    env.NEXUS_REPO = props['NEXUS_REPO']
+
+                    env.AWS_REGION = props['AWS_REGION']
+                    env.ECR_REPO = props['ECR_REPO']
+
+                    env.K8S_DEPLOYMENT = props['K8S_DEPLOYMENT']
+                    env.K8S_SERVICE = props['K8S_SERVICE']
+
+                    if (props['APP_VERSION'] == 'AUTO') {
+                        env.APP_VERSION = "1.0.${env.BUILD_NUMBER}"
+                    } else {
+                        env.APP_VERSION = props['APP_VERSION']
+                    }
+
+                    if (props['DOCKER_IMAGE_TAG'] == 'AUTO') {
+                        env.DOCKER_IMAGE_TAG = env.APP_VERSION
+                    } else {
+                        env.DOCKER_IMAGE_TAG = props['DOCKER_IMAGE_TAG']
+                    }
+
+                    echo "APP_VERSION: ${env.APP_VERSION}"
+                    echo "DOCKER_IMAGE_TAG: ${env.DOCKER_IMAGE_TAG}"
+                }
             }
         }
 
@@ -45,15 +78,43 @@ pipeline {
             }
         }
 
-        stage('Package') {
+        stage('Set Unique Maven Version') {
             steps {
-                sh 'mvn package -DskipTests'
+                sh """
+                mvn versions:set -DnewVersion=${APP_VERSION}
+                grep '<version>' pom.xml | head
+                """
             }
         }
 
-        stage('Upload Artifact to Nexus') {
+        stage('Build and Push JAR to Nexus') {
             steps {
-                sh 'mvn deploy -DskipTests'
+                sh """
+                mvn clean deploy -DskipTests
+                """
+            }
+        }
+
+        stage('Download JAR from Nexus') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'nexus-creds', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+                    sh """
+                    GROUP_PATH=\$(echo ${GROUP_ID} | tr '.' '/')
+
+                    JAR_URL="${NEXUS_URL}/repository/${NEXUS_REPO}/\${GROUP_PATH}/${ARTIFACT_ID}/${APP_VERSION}/${ARTIFACT_ID}-${APP_VERSION}.jar"
+
+                    echo "Downloading JAR from Nexus:"
+                    echo "\${JAR_URL}"
+
+                    rm -f app.jar
+
+                    curl -f -u "$NEXUS_USER:$NEXUS_PASS" \
+                      -o app.jar \
+                      "\${JAR_URL}"
+
+                    ls -lh app.jar
+                    """
+                }
             }
         }
 
@@ -86,20 +147,21 @@ pipeline {
             }
         }
 
-        stage('Docker Build') {
+        stage('Docker Build from Nexus JAR') {
             steps {
                 sh """
-                docker build -t ${ECR_REPO}:${IMAGE_TAG} .
-                docker tag ${ECR_REPO}:${IMAGE_TAG} ${ECR_URI}:${IMAGE_TAG}
-                docker tag ${ECR_REPO}:${IMAGE_TAG} ${ECR_URI}:latest
+                docker build -t ${ECR_REPO}:${DOCKER_IMAGE_TAG} .
+
+                docker tag ${ECR_REPO}:${DOCKER_IMAGE_TAG} ${ECR_URI}:${DOCKER_IMAGE_TAG}
+                docker tag ${ECR_REPO}:${DOCKER_IMAGE_TAG} ${ECR_URI}:latest
                 """
             }
         }
 
-        stage('Push Image to ECR') {
+        stage('Push Docker Image to ECR') {
             steps {
                 sh """
-                docker push ${ECR_URI}:${IMAGE_TAG}
+                docker push ${ECR_URI}:${DOCKER_IMAGE_TAG}
                 docker push ${ECR_URI}:latest
                 """
             }
@@ -111,14 +173,14 @@ pipeline {
                     sh """
                     cp k8s/deployment.yaml k8s/deployment-generated.yaml
 
-                    sed -i 's|IMAGE_NAME|${ECR_URI}:${IMAGE_TAG}|g' k8s/deployment-generated.yaml
+                    sed -i 's|IMAGE_NAME|${ECR_URI}:${DOCKER_IMAGE_TAG}|g' k8s/deployment-generated.yaml
 
                     kubectl apply -f k8s/deployment-generated.yaml
                     kubectl apply -f k8s/service.yaml
 
-                    kubectl rollout status deployment/java-test
+                    kubectl rollout status deployment/${K8S_DEPLOYMENT}
                     kubectl get pods -o wide
-                    kubectl get svc java-test-service
+                    kubectl get svc ${K8S_SERVICE}
                     """
                 }
             }
@@ -128,7 +190,10 @@ pipeline {
     post {
         success {
             echo "Pipeline successful."
-            echo "Docker image pushed: ${ECR_URI}:${IMAGE_TAG}"
+            echo "JAR pushed to Nexus:"
+            echo "${NEXUS_URL}/repository/${NEXUS_REPO}/${GROUP_ID}/${ARTIFACT_ID}/${APP_VERSION}"
+            echo "Docker image pushed:"
+            echo "${ECR_URI}:${DOCKER_IMAGE_TAG}"
         }
 
         failure {
